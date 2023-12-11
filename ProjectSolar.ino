@@ -19,8 +19,8 @@ unsigned long ledBlinkTime;     // Think this time as the pre-code time
 unsigned long currentTime;      // Think this time as the during-code time
 bool ledBlink = false;
 
-const float uvChargeTime = 1;               // Default: 1-min to charge.
-const float uvDischargeTime = 3;            // Default: 3-min to fully discharge.
+const float uvChargeTime = 0.5 * 60;      // Default: 0.5-h to charge.
+const float uvDischargeTime = 23.5 * 60;  // Default: 23.5h to fully discharge.
 const float solarInterval = 333.3333333;  // Default: 0.3 second interval for scanning UV from sensor.
 
 const float uvGainRate = 1;
@@ -28,31 +28,31 @@ const float uvMaxValue = uvGainRate * (uvChargeTime * 60 * 1000) / solarInterval
 const float uvDropRate = uvChargeTime / uvDischargeTime * uvGainRate;
 
 
-// Exponential Moving Average Filter
+// Exponential Moving Average (EMA) Filter
 #define MAJOR_VALUE 0.95
 float currentAverage;
 float lastAverage;
 
-// Measure values from sensors
-float uvValue;                       // variable to store the value coming from the sensor
-float solarValue;                    // variable for "solar"
-int solarBracket = uvMaxValue / 10;  // 10-Bars of LEDs
+// Measure Value From Sensors
+float uvValue;                       // Variable to store the value coming from the sensor
+float solarValue;                    // Variable for "Solar"
+int solarBracket = uvMaxValue / 10;  // Variable to equalize across 10-Bars of LEDs
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Project Solar Initialized");
+  Serial.println("#ProjectSolar Initialized");
 
-  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);  // Config: FastLED
-  for (int i = 0; i < NUM_LEDS; i++) {                  // Config: FastLED – On start, set all dark
+  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);  // Init: FastLED
+  for (int i = 0; i < NUM_LEDS; i++) {                  // Init: FastLED – On start, set all dark
     leds[i] = CRGB::Black;
     FastLED.show();
   }
 
-  // declare the uvReadLight as an OUTPUT:
-  pinMode(uvReadLight, OUTPUT);
+  // Declare the uvSensorPin as an INPUT:
   pinMode(uvSensorPin, INPUT);
 }
 
+// Key Function to Update Solar Variable
 void updateSolar(float c) {
   if (c > 50 && solarValue < uvMaxValue) {
     solarValue += uvGainRate;
@@ -65,6 +65,7 @@ void updateSolar(float c) {
   }
 }
 
+// Controller LED Sub-Functions with LED ID as Property
 void ledOn(int a) {
   leds[a * 2] = CRGB::Yellow;
   leds[a * 2 + 1] = CRGB::Yellow;
@@ -83,20 +84,23 @@ void ledOff(int a) {
   FastLED.show();
 }
 
+
 void loop() {
-  currentTime = millis();  // Get current time
+  // Get Current Time
+  currentTime = millis();
 
-  // read the value from the sensor:
+  // Read Value From Sensor and Smoothen with EMA Filter
   uvValue = analogRead(uvSensorPin);
-
   currentAverage = (MAJOR_VALUE * lastAverage) + ((1.0 - MAJOR_VALUE) * uvValue);
   lastAverage = currentAverage;
 
+  // Update solarValue Variable
   if (currentTime - solarUpdateTime >= solarInterval) {
     updateSolar(currentAverage);
     solarUpdateTime = currentTime;  // Reset pre-code time to current (now) or during
   }
 
+  // Update LED State
   if (currentTime - ledBlinkTime >= solarInterval * 2) {
     // Correlate solarValue to LED
     if (solarValue == 0) {
@@ -112,28 +116,32 @@ void loop() {
         FastLED.show();
       }
     } else {
-      for (int i = 0; i < 10; i++) {            // SolarValue Brackets
-        if (solarValue > (solarBracket * i)) {  // Interval 1
+      for (int i = 0; i < 10; i++) {            // 10-Light Brackets
+        if (solarValue > (solarBracket * i)) {  // Reference solarBracket Variable
           ledOn(i);
         } else {
           ledOff(i);
         }
       }
 
-      for (int i = 20; i < NUM_LEDS; i++) {  // Config: FastLED – On start, set all dark
+      for (int i = 20; i < NUM_LEDS; i++) {
         leds[i] = CRGB::Yellow;
         FastLED.show();
       }
     }
 
-    ledBlinkTime = currentTime;  // Reset pre-code time to current (now) or during
+    // Reset Pre-Code Time to Current (Now) or During
+    ledBlinkTime = currentTime;
 
+    // Print Values into Serial For Diagnostics
     Serial.print("UV Value: ");
     Serial.println(uvValue);
     Serial.print("solarValue: ");
     Serial.println(solarValue);
   }
 
+
+  // Override Controls for Diagnostics
   char c = Serial.read();
   if (c == 't') {
     solarValue = 3;
